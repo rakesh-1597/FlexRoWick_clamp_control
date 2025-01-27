@@ -2,6 +2,8 @@
 
 This repository is part of **FlexRoWick** project for controlling the clamp, which integrates the **FreeOpcUa** library and custom ROS packages like `clamp_control` to provide functionality for controlling devices via OPC UA in a simulated or real-world environment.
 
+PLC IP: 172.31.1.160
+
 ## Prerequisites
 
 Ensure that the following dependencies are installed on your system before proceeding:
