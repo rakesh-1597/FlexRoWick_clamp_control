@@ -4,11 +4,11 @@ import snap7
 from snap7.util import get_bool
 from snap7.util import set_bool
 from snap7.types import *
+import struct
 import rospy
 import sys
-import struct
-from builtins import open
 import logging
+from std_msgs.msg import Float32MultiArray
 
 # Configure logging
 logging.basicConfig(
@@ -26,6 +26,8 @@ class PlcClient:
         self.ip = ip
         self.rack = rack
         self.slot = slot
+        rospy.init_node("clamp_control_node")
+        rospy.Subscriber("flexrowick/clamp_output_params", Float32MultiArray, self.callback)
 
     def connect(self):
         try:
@@ -35,6 +37,27 @@ class PlcClient:
         except Exception as e:
             rospy.logerr(f"Failed to connect to PLC: {e}")
             sys.exit(1)
+
+    def callback(self, msg:Float32MultiArray):
+        rospy.loginfo(f"Entered value:{msg.data[0]}")
+        try:
+            plc.write_bool(2,10,1,False)
+        except Exception as e:
+            rospy.loginfo(f"Error resetting StartPosRel bit: {e}")
+        plc.write_double(2,28,msg.data[0])
+        try:
+            plc.write_bool(2,10,1,True)
+        except Exception as e:
+            rospy.loginfo(f"Error setting StartPosRel bit: {e}")
+        rospy.sleep(2)
+        try:
+            plc.write_bool(2,10,1,False)
+        except Exception as e:
+            rospy.loginfo(f"Error resetting StartPosRel bit: {e}")
+        #newVal = not jogForward
+        #print(f"setting JogForwardto:{newVal}")
+        #set_bool(data,0,7,newVal)
+        rospy.sleep(5)
 
     def disconnect(self):
         self.client.disconnect()
@@ -58,50 +81,79 @@ class PlcClient:
     def is_connected(self):
         return self.client.get_connected()
     
-    def list_blocks(self, ip):
+    def write_double(self, db_number, start, value):
+        """ Write an 8-byte float (double) value to a specific DB address """
         try:
-            self.connect()
-            rospy.loginfo(f"Connected to PLC at {ip}")
-            
-            blocks = self.client.list_blocks()
-            rospy.loginfo("Available Blocks:")
-            rospy.loginfo(f"  OBs: {blocks['OB']}")
-            rospy.loginfo(f"  FBs: {blocks['FB']}")
-            rospy.loginfo(f"  FCs: {blocks['FC']}")
-            rospy.loginfo(f"  DBs: {blocks['DB']}")
-            rospy.loginfo(f"  SDBs: {blocks['SDB']}")
-            
+            # Convert double (8-byte float) to bytes (Big-endian format for Siemens)
+            data = bytearray(struct.pack(">d", value))
+            self.client.db_write(db_number, start, data)
+            rospy.loginfo(f"Written {value} to DB {db_number} at start {start}")
         except Exception as e:
-            rospy.loginfo(f"Error: {e}")
-        finally:
-            if self.client.get_connected():
-                self.client.disconnect()
-                rospy.loginfo("Disconnected from PLC")
+            rospy.logerr(f"Failed to write to PLC: {e}")
+    
+    def write_bool(self, db_number, byte_offset, bit_offset, value):
+        """
+        Write a boolean value to a specific bit in a DB byte.
+        
+        :param db_number: The DB number (e.g., DB1)
+        :param byte_offset: The byte address (e.g., 10)
+        :param bit_offset: The bit within the byte (0-7, e.g., 1 for 10.1)
+        :param value: The boolean value (True or False)
+        """
+        try:
+            # Read the current byte from the PLC
+            current_byte = self.client.db_read(db_number, byte_offset, 1)[0]
+            
+            # Modify the specific bit
+            if value:
+                # Set the bit (OR operation)
+                modified_byte = current_byte | (1 << bit_offset)
+            else:
+                # Clear the bit (AND with inverted bit mask)
+                modified_byte = current_byte & ~(1 << bit_offset)
+            
+            # Write the modified byte back to the PLC
+            self.client.db_write(db_number, byte_offset, bytes([modified_byte]))
+            rospy.loginfo(f"Written BOOL {value} to DB {db_number} at {byte_offset}.{bit_offset}")
+        except Exception as e:
+            rospy.logerr(f"Failed to write BOOL to PLC: {e}")
+
+    def disconnect(self):
+        if self.client.get_connected():
+            self.client.disconnect()
+            rospy.loginfo("Disconnected from PLC.")
+    
 if __name__ == "__main__":
-    rospy.init_node("clamp_controller_node")
-    rospy.loginfo("Starting Clamp Controller Node")
     plc = PlcClient("172.31.1.160", 0, 1)
-    #plc.list_blocks("172.31.1.160")
+    rospy.loginfo("Starting Clamp Controller Node")
     plc.connect()
-    print(plc.client.get_cpu_info())
-    jogForward = False
-    while True:
+    rospy.loginfo(f"Plc Info: {plc.client.get_cpu_info()}")
+    rospy.on_shutdown(plc.disconnect)
+    rospy.loginfo(f"Waiting for data...")
+    rospy.spin()
+    """while True:
+        rotationVal = float(input("Enter the rotation degree value"))
         data =plc.client.db_read(2,10,1)
         jogForward = get_bool(data,0,7)
-        print(f"bJogForward:{jogForward}")
-        newVal = not jogForward
-        print(f"setting JogForwardto:{newVal}")
-        set_bool(data,0,7,newVal)
+        print(f"Entered value:{rotationVal}")
         try:
-            plc.client.db_write(2,10,data)
+            plc.write_bool(2,10,1,False)
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Error resetting StartPosRel bit: {e}")
+        plc.write_double(2,28,rotationVal)
+        try:
+            plc.write_bool(2,10,1,True)
+        except Exception as e:
+            print(f"Error setting StartPosRel bit: {e}")
+        rospy.sleep(2)
+        try:
+            plc.write_bool(2,10,1,False)
+        except Exception as e:
+            print(f"Error resetting StartPosRel bit: {e}")
+        #newVal = not jogForward
+        #print(f"setting JogForwardto:{newVal}")
+        #set_bool(data,0,7,newVal)
         rospy.sleep(5)
-    
-    #plc.list_blocks(plc.ip)
-    rospy.loginfo("sleeping")
-    rospy.sleep(10)
-    '''
     if len(sys.argv) != 2:
         rospy.logerr("Usage: rosrun clamp_control_node clampControllerNode.py <float_value>")
         sys.exit(1)
@@ -123,6 +175,4 @@ if __name__ == "__main__":
     plc.write_db_data(db_number, start, data)
     rospy.loginfo(f"Written value {value} to DB {db_number} at start {start}")
 
-    plc.disconnect()'''
-    plc.disconnect()
-    rospy.loginfo("PLC disconnected")
+    plc.disconnect()"""
