@@ -8,7 +8,7 @@ import struct
 import rospy
 import sys
 import logging
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Float32MultiArray, Bool
 
 # Configure logging
 logging.basicConfig(
@@ -22,71 +22,129 @@ logging.basicConfig(
 
 class PlcClient:
     def __init__(self, ip, rack, slot):
-        self.client = snap7.client.Client()
-        self.ip = ip
-        self.rack = rack
-        self.slot = slot
+        self.client_ = snap7.client.Client()
+        self.ip_ = ip
+        self.rack_ = rack
+        self.slot_ = slot
+        self.clampCtrlDb_ = 2
+        self.isCalibrated = False
+        self.currentClampAngle = float(0.00)
         rospy.init_node("clamp_control_node")
-        rospy.Subscriber("flexrowick/clamp_output_params", Float32MultiArray, self.callback)
+        rospy.Subscriber("flexrowick/clamp_relative_rotation", Float32MultiArray, self.callbackRelRotation)
+        rospy.Subscriber("flexrowick/calibration_done_cmd", Bool, self.callbackCalibrationDone)
+        rospy.Subscriber("flexrowick/clamp_absolute_rotation", Float32MultiArray, self.callbackAbsRotation)
 
     def connect(self):
         try:
-            self.client.connect(self.ip, self.rack, self.slot)
-            if self.client.get_connected():
+            self.client_.connect(self.ip_, self.rack_, self.slot_)
+            if self.client_.get_connected():
                 rospy.loginfo("Connected to PLC")
         except Exception as e:
             rospy.logerr(f"Failed to connect to PLC: {e}")
             sys.exit(1)
 
-    def callback(self, msg:Float32MultiArray):
-        rospy.loginfo(f"Entered value:{msg.data[0]}")
-        try:
-            plc.write_bool(2,10,1,False)
-        except Exception as e:
-            rospy.loginfo(f"Error resetting StartPosRel bit: {e}")
-        plc.write_double(2,28,msg.data[0])
-        try:
-            plc.write_bool(2,10,1,True)
-        except Exception as e:
-            rospy.loginfo(f"Error setting StartPosRel bit: {e}")
-        rospy.sleep(2)
-        try:
-            plc.write_bool(2,10,1,False)
-        except Exception as e:
-            rospy.loginfo(f"Error resetting StartPosRel bit: {e}")
-        #newVal = not jogForward
-        #print(f"setting JogForwardto:{newVal}")
-        #set_bool(data,0,7,newVal)
-        rospy.sleep(5)
+    def callbackRelRotation(self, msg:Float32MultiArray):
+        if(not self.isCalibrated):
+            rospy.loginfo("Calibration not done! Please follow these steps below")
+            rospy.loginfo("1) calibarate the clamp to zero postion using the hydraulic pin")
+            rospy.loginfo("2) When done, publish execute ros topic:  flexrowick/calibration_done_cmd")
+        else:
+            rospy.loginfo(f"Entered value:{msg.data[0]}")
+            try:
+                plc.write_bool(self.clampCtrlDb_,10,1,False)
+            except Exception as e:
+                rospy.loginfo(f"Error resetting StartPosRel bit: {e}")
 
+            plc.write_double(self.clampCtrlDb_,28,msg.data[0])
+            rospy.sleep(0.5)    #the rotation happens on a false to true edge of bStartPos_relativ signal as per TIA 
+
+            try:
+                plc.write_bool(self.clampCtrlDb_,10,1,True)
+            except Exception as e:
+                rospy.loginfo(f"Error setting StartPosRel bit: {e}")
+            rospy.sleep(1)
+            # wait until the rotation is completed
+            while(self.isClampBusy()):  
+                pass
+            self.currentClampAngle = (self.currentClampAngle + msg.data[0]) % 360.0
+            rospy.loginfo(f"current clamp angle(program evaluated): {self.currentClampAngle}")
+            try:
+                plc.write_bool(self.clampCtrlDb_,10,1,False)
+            except Exception as e:
+                rospy.loginfo(f"Error resetting StartPosRel bit: {e}")  
+
+    def callbackAbsRotation(self, msg:Float32MultiArray):
+        if(not self.isCalibrated):
+            rospy.loginfo("Calibration not done! Please follow these steps below")
+            rospy.loginfo("1) calibarate the clamp to zero postion using the hydraulic pin")
+            rospy.loginfo("2) When done, publish execute ros topic:  flexrowick/calibration_done_cmd")
+        else :
+            currClampPos = self.currentClampAngle
+            rospy.loginfo(f"Current clamp pos:{currClampPos}")
+            rospy.loginfo(f"Will  move to :{msg.data[0]} now...")
+            moveToAngle = float((msg.data[0] - currClampPos) % 360.0)
+            try:
+                plc.write_bool(self.clampCtrlDb_,10,1,False)
+            except Exception as e:
+                rospy.loginfo(f"Error resetting StartPosRel bit: {e}")
+
+            plc.write_double(self.clampCtrlDb_, 28, moveToAngle)
+            rospy.sleep(0.5)    #the rotation happens on a false to true edge of bStartPos_relativ signal as per TIA 
+
+            try:
+                plc.write_bool(self.clampCtrlDb_,10,1,True)
+            except Exception as e:
+                rospy.loginfo(f"Error setting StartPosRel bit: {e}")
+            rospy.sleep(1)
+
+            # wait until the rotation is completed
+            while(self.isClampBusy()):  
+                pass
+            self.currentClampAngle = float(msg.data[0] %  360.0)
+            try:
+                plc.write_bool(self.clampCtrlDb_,10,1,False)
+            except Exception as e:
+                rospy.loginfo(f"Error resetting StartPosRel bit: {e}")
+            rospy.loginfo(f"current clamp angle(program evaluated): {self.currentClampAngle}")
+
+    def callbackCalibrationDone(self, msg:Bool):
+        self.isCalibrated = bool(msg)
+        self.currentClampAngle = float(0.0)
+        rospy.loginfo(f"Calibration flag set to {msg}  and currentClampAngle set to 0.0 !")
+    
     def disconnect(self):
-        self.client.disconnect()
+        self.client_.disconnect()
         rospy.loginfo("Disconnected from PLC")
 
     def read_db_data(self, db_number, start, size):
         try:
-            return self.client.db_read(db_number, start, size)
+            return self.client_.db_read(db_number, start, size)
         except Exception as e:
             rospy.logerr(f"Failed to read DB data: {e}")
             sys.exit(1)
-
+    def read_current_position(self) -> float:
+        try:
+            return struct.unpack('>d',self.read_db_data(self.clampCtrlDb_, 12, 8))[0]
+        except Exception as e:
+            rospy.logerr(f"Failed to read from DB{self.clampCtrlDb_} data at 12th byte: {e}")
+            sys.exit(1)
     def write_db_data(self, db_number, start, data):
         try:
-            self.client.db_write(db_number, start, data)
+            self.client_.db_write(db_number, start, data)
             rospy.loginfo(f"Successfully wrote data to DB {db_number} at start {start}")
         except Exception as e:
             rospy.logerr(f"Failed to write DB data: {e}")
             sys.exit(1)
 
     def is_connected(self):
-        return self.client.get_connected()
+        return self.client_.get_connected()
     
     def write_double(self, db_number, start, value):
         """ Write an 8-byte float (double) value to a specific DB address """
         try:
             # Convert double (8-byte float) to bytes (Big-endian format for Siemens)
             data = bytearray(struct.pack(">d", value))
-            self.client.db_write(db_number, start, data)
+            self.client_.db_write(db_number, start, data)
             rospy.loginfo(f"Written {value} to DB {db_number} at start {start}")
         except Exception as e:
             rospy.logerr(f"Failed to write to PLC: {e}")
@@ -102,7 +160,7 @@ class PlcClient:
         """
         try:
             # Read the current byte from the PLC
-            current_byte = self.client.db_read(db_number, byte_offset, 1)[0]
+            current_byte = self.client_.db_read(db_number, byte_offset, 1)[0]
             
             # Modify the specific bit
             if value:
@@ -113,66 +171,43 @@ class PlcClient:
                 modified_byte = current_byte & ~(1 << bit_offset)
             
             # Write the modified byte back to the PLC
-            self.client.db_write(db_number, byte_offset, bytes([modified_byte]))
+            self.client_.db_write(db_number, byte_offset, bytes([modified_byte]))
             rospy.loginfo(f"Written BOOL {value} to DB {db_number} at {byte_offset}.{bit_offset}")
         except Exception as e:
             rospy.logerr(f"Failed to write BOOL to PLC: {e}")
 
+    def read_bit(self, db_number, byte_offset, bit_offset):
+        """
+        Reads a specific bit from a byte in a Data Block.
+        :param db_number: Data Block number (e.g., 1 for DB1)
+        :param byte_offset: Byte index (e.g., 10 for DBX10.x)
+        :param bit_offset: Bit index within the byte (0-7)
+        :return: Boolean value of the bit (True/False)
+        """
+        try:
+            # Read 1 byte from the PLC
+            byte_value = self.client_.db_read(db_number, byte_offset, 1)[0]
+
+            # Extract the specific bit
+            bit_value = (byte_value >> bit_offset) & 1
+            return bool(bit_value)
+        except Exception as e:
+            rospy.logerr(f"Failed to read bit from PLC at  DB{self.clampCtrlDb_} byte {byte_offset} bit{bit_offset}: {e}")
+            return None
+
     def disconnect(self):
-        if self.client.get_connected():
-            self.client.disconnect()
+        if self.client_.get_connected():
+            self.client_.disconnect()
             rospy.loginfo("Disconnected from PLC.")
+    
+    def isClampBusy(self) -> bool:
+        return self.read_bit(self.clampCtrlDb_, 68, 4)
     
 if __name__ == "__main__":
     plc = PlcClient("172.31.1.160", 0, 1)
     rospy.loginfo("Starting Clamp Controller Node")
     plc.connect()
-    rospy.loginfo(f"Plc Info: {plc.client.get_cpu_info()}")
+    rospy.loginfo(f"Plc Info: {plc.client_.get_cpu_info()}")
     rospy.on_shutdown(plc.disconnect)
     rospy.loginfo(f"Waiting for data...")
     rospy.spin()
-    """while True:
-        rotationVal = float(input("Enter the rotation degree value"))
-        data =plc.client.db_read(2,10,1)
-        jogForward = get_bool(data,0,7)
-        print(f"Entered value:{rotationVal}")
-        try:
-            plc.write_bool(2,10,1,False)
-        except Exception as e:
-            print(f"Error resetting StartPosRel bit: {e}")
-        plc.write_double(2,28,rotationVal)
-        try:
-            plc.write_bool(2,10,1,True)
-        except Exception as e:
-            print(f"Error setting StartPosRel bit: {e}")
-        rospy.sleep(2)
-        try:
-            plc.write_bool(2,10,1,False)
-        except Exception as e:
-            print(f"Error resetting StartPosRel bit: {e}")
-        #newVal = not jogForward
-        #print(f"setting JogForwardto:{newVal}")
-        #set_bool(data,0,7,newVal)
-        rospy.sleep(5)
-    if len(sys.argv) != 2:
-        rospy.logerr("Usage: rosrun clamp_control_node clampControllerNode.py <float_value>")
-        sys.exit(1)
-
-    try:
-        value = float(sys.argv[1])
-    except ValueError:
-        rospy.logerr("The argument must be a float.")
-        sys.exit(1)
-
-    plc = PlcClient("197.168.100", 0, 2)
-    plc.connect()
-    rospy.loginfo("PLC connected")
-
-    # Assuming the float value needs to be written to DB number 1, starting at byte 0
-    db_number = 1
-    start = 0
-    data = bytearray(struct.pack("f", value))
-    plc.write_db_data(db_number, start, data)
-    rospy.loginfo(f"Written value {value} to DB {db_number} at start {start}")
-
-    plc.disconnect()"""
