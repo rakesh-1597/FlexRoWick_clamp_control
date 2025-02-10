@@ -8,7 +8,7 @@ class ClampCmdInterface:
         self.relativeRotationPub_ = rospy.Publisher("flexrowick/clamp_relative_rotation", Float32MultiArray, queue_size = 10)
         self.absoluteRotationPub_ = rospy.Publisher("flexrowick/clamp_absolute_rotation", Float32MultiArray, queue_size= 10)
         self.calibrationCommandPub_ = rospy.Publisher("flexrowick/calibration_done_cmd", Bool, queue_size= 10)
-        rospy.sleep(1)  #give some time for rosNode to register the publishers
+        rospy.sleep(1)  #give some time for rosNode to register the publishers for 1 second
 
     def relRotation(self, angle:float):
         try:
