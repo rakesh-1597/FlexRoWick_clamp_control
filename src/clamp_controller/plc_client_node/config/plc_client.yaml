@@ -1,0 +1,10 @@
+plc_client_node:
+  plc_ip: "172.31.1.160"
+  plc_db_number: 2
+  plc_rack: 0
+  plc_slot: 1
+
+global_params:
+    topic_relative_rotation: "flexrowick/clamp_relative_rotation"
+    topic_absolute_rotation: "flexrowick/clamp_relative_rotation"
+    topic_calibration_command: "flexrowick/calibration_done_cmd"

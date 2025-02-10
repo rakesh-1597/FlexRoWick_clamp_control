@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(clamp_controller)
+project(controller_interface)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 # add_compile_options(-std=c++11)
@@ -8,7 +8,6 @@ project(clamp_controller)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
-  roscpp
   rospy
   std_msgs
 )
@@ -159,10 +158,10 @@ include_directories(
 
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
- catkin_install_python(PROGRAMS
-   main.py
-   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
- )
+catkin_install_python(PROGRAMS
+  clamp_command_interface.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
 
 ## Mark executables for installation
 ## See http://docs.ros.org/melodic/api/catkin/html/howto/format1/building_executables.html

@@ -6,10 +6,13 @@ from snap7.util import set_bool
 from snap7.types import *
 import struct
 import rospy
+import yaml
 import sys
-import logging
+import os
+#import logging
 from std_msgs.msg import Float32MultiArray, Bool
 
+"""
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -18,21 +21,44 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
-
+"""
 
 class PlcClient:
     def __init__(self):
+        self.loadYaml()
         self.client_ = snap7.client.Client()
         self.ip_ = rospy.get_param("plc_client_node/plc_ip")
         self.rack_ = rospy.get_param("plc_client_node/plc_rack")
         self.slot_ = rospy.get_param("plc_client_node/plc_slot")
-        self.clampCtrlDb_ = rospy.get_param("plc_client_node/clamp_ctrl_db")
+        self.clampCtrlDbNum_ = rospy.get_param("plc_client_node/plc_db_number")
         self.isCalibrated_ = False
         self.currentClampAngle_ = float(0.00)
         rospy.init_node("plc_client_node")
-        rospy.Subscriber(rospy.get_param("/tsub_relative_rotation","flexrowick/clamp_relative_rotation"), Float32MultiArray, self.callbackRelRotation)
-        rospy.Subscriber(rospy.get_param("/tsub_calibration_command","flexrowick/calibration_done_cmd"), Bool, self.callbackCalibrationDone)
-        rospy.Subscriber(rospy.get_param("/tsub_absolute_rotation","flexrowick/clamp_absolute_rotation"), Float32MultiArray, self.callbackAbsRotation)
+        rospy.Subscriber(rospy.get_param("/topic_relative_rotation","flexrowick/clamp_relative_rotation"), Float32MultiArray, self.callbackRelRotation)
+        rospy.Subscriber(rospy.get_param("/topic_calibration_command","flexrowick/calibration_done_cmd"), Bool, self.callbackCalibrationDone)
+        rospy.Subscriber(rospy.get_param("/topic_absolute_rotation","flexrowick/clamp_absolute_rotation"), Float32MultiArray, self.callbackAbsRotation)
+    
+    def loadYaml(self):
+        """Loads parameters from a YAML file into the ROS Parameter Server"""
+        cwd = os.getcwd()
+
+        # Define the relative path to the YAML file (relative to the workspace root)
+        yaml_relative_path = "src/clamp_controller/plc_client_node/config/plc_client.yaml"
+        
+        # Construct the absolute path
+        yaml_path = os.path.join(cwd, yaml_relative_path)        
+        if not os.path.exists(yaml_path):
+            rospy.logwarn(f"YAML file not found: {yaml_path}")
+            return
+        
+        try:
+            with open(yaml_path, "r") as file:
+                params = yaml.safe_load(file)
+                for key, value in params.items():
+                    rospy.set_param(key, value)  # Load params into ROS parameter server
+            rospy.loginfo("Loaded parameters from YAML file.")
+        except Exception as e:
+            rospy.logerr(f"Failed to load YAML file: {e}")
 
     def connect(self):
         try:
@@ -51,15 +77,15 @@ class PlcClient:
         else:
             rospy.loginfo(f"Entered value:{msg.data[0]}")
             try:
-                plc.write_bool(self.clampCtrlDb_,10,1,False)
+                self.write_bool(self.clampCtrlDbNum_,10,1,False)
             except Exception as e:
                 rospy.loginfo(f"Error resetting StartPosRel bit: {e}")
 
-            plc.write_double(self.clampCtrlDb_,28,msg.data[0])
+            self.write_double(self.clampCtrlDbNum_,28,msg.data[0])
             rospy.sleep(0.5)    #the rotation happens on a false to true edge of bStartPos_relativ signal as per TIA 
 
             try:
-                plc.write_bool(self.clampCtrlDb_,10,1,True)
+                self.write_bool(self.clampCtrlDbNum_,10,1,True)
             except Exception as e:
                 rospy.loginfo(f"Error setting StartPosRel bit: {e}")
             rospy.sleep(1)
@@ -69,7 +95,7 @@ class PlcClient:
             self.currentClampAngle_ = (self.currentClampAngle_ + msg.data[0]) % 360.0
             rospy.loginfo(f"current clamp angle(program evaluated): {self.currentClampAngle_}")
             try:
-                plc.write_bool(self.clampCtrlDb_,10,1,False)
+                self.write_bool(self.clampCtrlDbNum_,10,1,False)
             except Exception as e:
                 rospy.loginfo(f"Error resetting StartPosRel bit: {e}")  
 
@@ -84,15 +110,15 @@ class PlcClient:
             rospy.loginfo(f"Will  move to :{msg.data[0]} now...")
             moveToAngle = float((msg.data[0] - currClampPos) % 360.0)
             try:
-                plc.write_bool(self.clampCtrlDb_,10,1,False)
+                self.write_bool(self.clampCtrlDbNum_,10,1,False)
             except Exception as e:
                 rospy.loginfo(f"Error resetting StartPosRel bit: {e}")
 
-            plc.write_double(self.clampCtrlDb_, 28, moveToAngle)
+            self.write_double(self.clampCtrlDbNum_, 28, moveToAngle)
             rospy.sleep(0.5)    #the rotation happens on a false to true edge of bStartPos_relativ signal as per TIA 
 
             try:
-                plc.write_bool(self.clampCtrlDb_,10,1,True)
+                self.write_bool(self.clampCtrlDbNum_,10,1,True)
             except Exception as e:
                 rospy.loginfo(f"Error setting StartPosRel bit: {e}")
             rospy.sleep(1)
@@ -102,15 +128,16 @@ class PlcClient:
                 pass
             self.currentClampAngle_ = float(msg.data[0] %  360.0)
             try:
-                plc.write_bool(self.clampCtrlDb_,10,1,False)
+                self.write_bool(self.clampCtrlDbNum_,10,1,False)
             except Exception as e:
                 rospy.loginfo(f"Error resetting StartPosRel bit: {e}")
             rospy.loginfo(f"current clamp angle(program evaluated): {self.currentClampAngle_}")
 
     def callbackCalibrationDone(self, msg:Bool):
         self.isCalibrated_ = bool(msg)
-        self.currentClampAngle_ = float(0.0)
-        rospy.loginfo(f"Calibration flag set to {msg}  and currentClampAngle_ set to 0.0 !")
+        if(self.isCalibrated_):
+            self.currentClampAngle_ = float(0.0)
+        rospy.loginfo(f"Calibration flag set to {msg}  and currentClampAngle_ = {self.currentClampAngle_}")
     
     def disconnect(self):
         self.client_.disconnect()
@@ -124,9 +151,9 @@ class PlcClient:
             sys.exit(1)
     def read_current_position(self) -> float:
         try:
-            return struct.unpack('>d',self.read_db_data(self.clampCtrlDb_, 12, 8))[0]
+            return struct.unpack('>d',self.read_db_data(self.clampCtrlDbNum_, 12, 8))[0]
         except Exception as e:
-            rospy.logerr(f"Failed to read from DB{self.clampCtrlDb_} data at 12th byte: {e}")
+            rospy.logerr(f"Failed to read from DB{self.clampCtrlDbNum_} data at 12th byte: {e}")
             sys.exit(1)
     def write_db_data(self, db_number, start, data):
         try:
@@ -192,7 +219,7 @@ class PlcClient:
             bit_value = (byte_value >> bit_offset) & 1
             return bool(bit_value)
         except Exception as e:
-            rospy.logerr(f"Failed to read bit from PLC at  DB{self.clampCtrlDb_} byte {byte_offset} bit{bit_offset}: {e}")
+            rospy.logerr(f"Failed to read bit from PLC at  DB{self.clampCtrlDbNum_} byte {byte_offset} bit{bit_offset}: {e}")
             return None
 
     def disconnect(self):
@@ -201,8 +228,17 @@ class PlcClient:
             rospy.loginfo("Disconnected from PLC.")
     
     def isClampBusy(self) -> bool:
-        return self.read_bit(self.clampCtrlDb_, 68, 4)
-"""
+        return self.read_bit(self.clampCtrlDbNum_, 68, 4)
+    
+    def runNodeLoop(self):
+        rospy.loginfo("Starting Plc Client Node")
+        self.connect()
+        rospy.loginfo(f"Plc Info: {self.client_.get_cpu_info()}")
+        rospy.on_shutdown(self.disconnect)
+        rospy.loginfo(f"Waiting for data...")
+        rospy.spin()
+    
+
 if __name__ == "__main__":
     plc = PlcClient()
     rospy.loginfo("Starting Plc Client Node")
@@ -212,6 +248,4 @@ if __name__ == "__main__":
     rospy.loginfo(f"Waiting for data...")
     rospy.spin()
 
-
-"""
 
