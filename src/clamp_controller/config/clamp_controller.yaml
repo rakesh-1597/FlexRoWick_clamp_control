@@ -1,0 +1,6 @@
+clamp_controller:
+  
+global_params:
+  tpub_relative_rotation: "flexrowick/clamp_relative_rotation"
+  tpub_absolute_rotation: "flexrowick/clamp_absolute_rotation"
+  tpub_calibration_command: "flexrowick/calibration_done_cmd"

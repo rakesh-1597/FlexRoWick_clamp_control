@@ -21,18 +21,18 @@ logging.basicConfig(
 
 
 class PlcClient:
-    def __init__(self, ip, rack, slot):
+    def __init__(self):
         self.client_ = snap7.client.Client()
-        self.ip_ = ip
-        self.rack_ = rack
-        self.slot_ = slot
-        self.clampCtrlDb_ = 2
-        self.isCalibrated = False
-        self.currentClampAngle = float(0.00)
-        rospy.init_node("clamp_control_node")
-        rospy.Subscriber("flexrowick/clamp_relative_rotation", Float32MultiArray, self.callbackRelRotation)
-        rospy.Subscriber("flexrowick/calibration_done_cmd", Bool, self.callbackCalibrationDone)
-        rospy.Subscriber("flexrowick/clamp_absolute_rotation", Float32MultiArray, self.callbackAbsRotation)
+        self.ip_ = rospy.get_param("plc_client_node/plc_ip")
+        self.rack_ = rospy.get_param("plc_client_node/plc_rack")
+        self.slot_ = rospy.get_param("plc_client_node/plc_slot")
+        self.clampCtrlDb_ = rospy.get_param("plc_client_node/clamp_ctrl_db")
+        self.isCalibrated_ = False
+        self.currentClampAngle_ = float(0.00)
+        rospy.init_node("plc_client_node")
+        rospy.Subscriber(rospy.get_param("/tsub_relative_rotation","flexrowick/clamp_relative_rotation"), Float32MultiArray, self.callbackRelRotation)
+        rospy.Subscriber(rospy.get_param("/tsub_calibration_command","flexrowick/calibration_done_cmd"), Bool, self.callbackCalibrationDone)
+        rospy.Subscriber(rospy.get_param("/tsub_absolute_rotation","flexrowick/clamp_absolute_rotation"), Float32MultiArray, self.callbackAbsRotation)
 
     def connect(self):
         try:
@@ -44,7 +44,7 @@ class PlcClient:
             sys.exit(1)
 
     def callbackRelRotation(self, msg:Float32MultiArray):
-        if(not self.isCalibrated):
+        if(not self.isCalibrated_):
             rospy.loginfo("Calibration not done! Please follow these steps below")
             rospy.loginfo("1) calibarate the clamp to zero postion using the hydraulic pin")
             rospy.loginfo("2) When done, publish execute ros topic:  flexrowick/calibration_done_cmd")
@@ -66,20 +66,20 @@ class PlcClient:
             # wait until the rotation is completed
             while(self.isClampBusy()):  
                 pass
-            self.currentClampAngle = (self.currentClampAngle + msg.data[0]) % 360.0
-            rospy.loginfo(f"current clamp angle(program evaluated): {self.currentClampAngle}")
+            self.currentClampAngle_ = (self.currentClampAngle_ + msg.data[0]) % 360.0
+            rospy.loginfo(f"current clamp angle(program evaluated): {self.currentClampAngle_}")
             try:
                 plc.write_bool(self.clampCtrlDb_,10,1,False)
             except Exception as e:
                 rospy.loginfo(f"Error resetting StartPosRel bit: {e}")  
 
     def callbackAbsRotation(self, msg:Float32MultiArray):
-        if(not self.isCalibrated):
+        if(not self.isCalibrated_):
             rospy.loginfo("Calibration not done! Please follow these steps below")
             rospy.loginfo("1) calibarate the clamp to zero postion using the hydraulic pin")
             rospy.loginfo("2) When done, publish execute ros topic:  flexrowick/calibration_done_cmd")
         else :
-            currClampPos = self.currentClampAngle
+            currClampPos = self.currentClampAngle_
             rospy.loginfo(f"Current clamp pos:{currClampPos}")
             rospy.loginfo(f"Will  move to :{msg.data[0]} now...")
             moveToAngle = float((msg.data[0] - currClampPos) % 360.0)
@@ -100,17 +100,17 @@ class PlcClient:
             # wait until the rotation is completed
             while(self.isClampBusy()):  
                 pass
-            self.currentClampAngle = float(msg.data[0] %  360.0)
+            self.currentClampAngle_ = float(msg.data[0] %  360.0)
             try:
                 plc.write_bool(self.clampCtrlDb_,10,1,False)
             except Exception as e:
                 rospy.loginfo(f"Error resetting StartPosRel bit: {e}")
-            rospy.loginfo(f"current clamp angle(program evaluated): {self.currentClampAngle}")
+            rospy.loginfo(f"current clamp angle(program evaluated): {self.currentClampAngle_}")
 
     def callbackCalibrationDone(self, msg:Bool):
-        self.isCalibrated = bool(msg)
-        self.currentClampAngle = float(0.0)
-        rospy.loginfo(f"Calibration flag set to {msg}  and currentClampAngle set to 0.0 !")
+        self.isCalibrated_ = bool(msg)
+        self.currentClampAngle_ = float(0.0)
+        rospy.loginfo(f"Calibration flag set to {msg}  and currentClampAngle_ set to 0.0 !")
     
     def disconnect(self):
         self.client_.disconnect()
@@ -202,12 +202,16 @@ class PlcClient:
     
     def isClampBusy(self) -> bool:
         return self.read_bit(self.clampCtrlDb_, 68, 4)
-    
+"""
 if __name__ == "__main__":
-    plc = PlcClient("172.31.1.160", 0, 1)
-    rospy.loginfo("Starting Clamp Controller Node")
+    plc = PlcClient()
+    rospy.loginfo("Starting Plc Client Node")
     plc.connect()
     rospy.loginfo(f"Plc Info: {plc.client_.get_cpu_info()}")
     rospy.on_shutdown(plc.disconnect)
     rospy.loginfo(f"Waiting for data...")
     rospy.spin()
+
+
+"""
+
