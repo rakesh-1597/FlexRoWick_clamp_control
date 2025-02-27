@@ -4,7 +4,7 @@ from controller_interface.clamp_command_interface import ClampCmdInterface
 def userInputLoop(interfaceObj:ClampCmdInterface):
     while True:
         print("Welcome to the FlexRoWick Clamp Controller terminal!")
-        print("Command Menu: 1) Perform relative rotation 2) Perform absolute rotation 3) Perform calibration")
+        print("Command Menu: 1) Perform relative rotation 2) Perform absolute rotation 3) Perform calibration \n 4) Perform clamp initialisation 5) Stop rotation")
         try:
             command = int(input("Enter the command number: "))
         except ValueError:
@@ -28,6 +28,18 @@ def userInputLoop(interfaceObj:ClampCmdInterface):
             except ValueError as e:
                 print(f"Error! Entered value is not of type int {e}")
             interfaceObj.setCalibration(bool(flag))
+        elif command == 4:
+            try:
+                flag = int(input("Perform clamp initialisation Flag: 1(True) or 0(False)"))
+            except ValueError as e:
+                print(f"Error! Entered value is not of type int {e}")
+            interfaceObj.initialiseClamp(bool(flag))
+        elif command == 5:
+            try:
+                flag = int(input("Stop rotation Flag: 1(Stop) or 0(Continue)"))
+            except ValueError as e:
+                print(f"Error! Entered value is not of type int {e}")
+            interfaceObj.stopRotation(bool(flag))
         else:
             print("Invalid command! Please enter a valid command number.")
 

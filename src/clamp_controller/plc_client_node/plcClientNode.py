@@ -25,7 +25,7 @@ logging.basicConfig(
 
 class PlcClient:
     def __init__(self):
-        self.loadYaml()
+        #self.loadYaml()
         self.client_ = snap7.client.Client()
         self.ip_ = rospy.get_param("plc_client_node/plc_ip", "172.31.1.160")
         self.rack_ = rospy.get_param("plc_client_node/plc_rack", 0)
@@ -34,10 +34,13 @@ class PlcClient:
         self.isCalibrated_ = False
         self.currentClampAngle_ = float(0.00)
         self.actualClampAngle_ = float(0.00)
+        self.clampRotating_ = False
         rospy.init_node("plc_client_node")
         rospy.Subscriber(rospy.get_param("/topic_relative_rotation","flexrowick/clamp_relative_rotation"), Float32, self.callbackRelRotation)
         rospy.Subscriber(rospy.get_param("/topic_calibration_command","flexrowick/calibration_done_cmd"), Bool, self.callbackCalibrationDone)
         rospy.Subscriber(rospy.get_param("/topic_absolute_rotation","flexrowick/clamp_absolute_rotation"), Float32, self.callbackAbsRotation)
+        rospy.Subscriber(rospy.get_param("/topic_stop_rotation","flexrowick/stop_rotation"), Bool, self.callbackStopRotation)
+        rospy.Subscriber(rospy.get_param("/topic_clamp_init","flexrowick/clamp_init"), Bool, self.callbackClampInit)
         self.clamp_angle_pub = rospy.Publisher("flexrowick/current_clamp_angle", Float32, queue_size = 10)
         self.timer = rospy.Timer(rospy.Duration(1), self.publishClampAngle)
     
@@ -46,7 +49,7 @@ class PlcClient:
         cwd = os.getcwd()
 
         # Define the relative path to the YAML file (relative to the workspace root)
-        yaml_relative_path = "src/clamp_controller/plc_client_node/config/plc_client.yaml"
+        yaml_relative_path = "config/plc_client.yaml"
         
         # Construct the absolute path
         yaml_path = os.path.join(cwd, yaml_relative_path)        
@@ -86,15 +89,13 @@ class PlcClient:
 
             self.write_double(self.clampCtrlDbNum_,28,msg.data)
             rospy.sleep(0.5)    #the rotation happens on a false to true edge of bStartPos_relativ signal as per TIA 
-
             try:
                 self.write_bool(self.clampCtrlDbNum_,10,1,True)
             except Exception as e:
                 rospy.loginfo(f"Error setting StartPosRel bit: {e}")
-
             # wait until the rotation is completed
-            while(self.isClampBusy()):  
-                pass
+            #while(self.isClampBusy()):  
+             #   pass
             try:
                 self.write_bool(self.clampCtrlDbNum_,10,1,False)
             except Exception as e:
@@ -126,9 +127,9 @@ class PlcClient:
                 rospy.loginfo(f"Error setting StartPosRel bit: {e}")
 
             # wait until the rotation is completed
-            while(self.isClampBusy()):
-                rospy.sleep(0.5)  
-                pass
+            #while(self.isClampBusy()):
+             #   rospy.sleep(0.5)  
+              #  pass
             try:
                 self.write_bool(self.clampCtrlDbNum_,10,1,False)
             except Exception as e:
@@ -139,6 +140,77 @@ class PlcClient:
         if(self.isCalibrated_):
             self.actualClampAngle_ = self.readClampPosition()
         rospy.loginfo(f"Calibration flag set to {msg}  and actualClampAngle_ = {self.actualClampAngle_}")
+
+    def callbackStopRotation(self, msg:Bool):
+        
+        rospy.loginfo(f"Stopping the rotation")
+        try:
+            self.write_bool(self.clampCtrlDbNum_,10,2, False) # TODO: Check with HMI panel on how to stop ongoing rotation
+        except Exception as e:
+            rospy.loginfo(f"Error in stopping rotation : {e}")
+        rospy.sleep(0.2)
+        try:
+            self.write_bool(self.clampCtrlDbNum_,10,2, True) # TODO: Check with HMI panel on how to stop ongoing rotation
+        except Exception as e:
+            rospy.loginfo(f"Error in stopping rotation : {e}")
+    
+    def callbackActivateInfeed(self, msg:Bool):
+        rospy.loginfo(f"activating InFeed")
+        try:
+            self.write_bool(self.clampCtrlDbNum_,10,5,bool(msg))
+        except Exception as e:
+            rospy.loginfo(f"Error activating infeed : {e}")
+    
+    def callbackActivatePrecharging(self, msg:Bool):
+        rospy.loginfo(f"activating Pre charging")
+        try:
+            self.write_bool(self.clampCtrlDbNum_,10,3,bool(msg))
+        except Exception as e:
+            rospy.loginfo(f"Error activating precharging: {e}")
+    
+    def callbackClampInit(self, msg:Bool):
+        rospy.loginfo(f"Initialising the clamp..")
+        try:
+            rospy.loginfo(f"Activating infeed now..")
+            self.write_bool(self.clampCtrlDbNum_,10, 5,bool(msg))
+            rospy.sleep(1)
+            rospy.loginfo(f"Infeed Activated..")
+        except Exception as e:
+            rospy.loginfo(f"Error activating precharging: {e}")
+        try:
+            rospy.loginfo(f"Activating Pre Charging now..")
+            self.write_bool(self.clampCtrlDbNum_,10, 3,bool(msg))
+            rospy.sleep(1)
+            rospy.loginfo(f"Precharging Activated..")
+        except Exception as e:
+            rospy.loginfo(f"Error activating precharging: {e}")
+        try:
+            rospy.loginfo(f"Activating axis now..")
+            self.write_bool(self.clampCtrlDbNum_,11, 2,bool(msg))
+            rospy.sleep(1)
+            rospy.loginfo(f"Axis Activated..")
+        except Exception as e:
+            rospy.loginfo(f"Error activating Axis: {e}")
+        
+        try:
+            axisReady = self.read_bit(self.clampCtrlDbNum_, 68, 1)
+        except Exception as e:
+            rospy.loginfo(f"Error reading  AxisReady bit field: {e}")
+        rospy.loginfo(f"AxisReady:{axisReady}")
+
+        try:
+            axisError = self.read_bit(self.clampCtrlDbNum_, 68, 3)
+        except Exception as e:
+            rospy.loginfo(f"Error reading  AxisError bit field: {e}")
+        rospy.loginfo(f"AxisError:{axisError}")
+
+        if((axisError == 1) and (axisReady == 0 )):
+            try:
+                self.write_bool(self.clampCtrlDbNum_,10, 4,bool(msg))
+            except Exception as e:
+                rospy.loginfo(f"Error writing  10.4 bit field: {e}")
+            
+    
     
     def disconnect(self):
         self.client_.disconnect()

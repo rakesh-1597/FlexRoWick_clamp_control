@@ -9,3 +9,5 @@ global_params:
     topic_absolute_rotation: "flexrowick/clamp_relative_rotation"
     topic_calibration_command: "flexrowick/calibration_done_cmd"
     topic_current_clamp_angle: "flexrowick/current_clamp_angle"
+    topic_stop_rotation: "flexrowick/stop_rotation"
+    topic_clamp_init": "flexrowick/clamp_init"
