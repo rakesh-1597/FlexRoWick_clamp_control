@@ -11,10 +11,10 @@ Ensure that the following dependencies are installed on your system before proce
 ### General Tools
 - **Git**
 - **CMake** (version 3.0 or later)
-- **GCC/G++** (version 9 or later)
+- **Python** (version 3.8.10 or later)
 
 ### ROS Setup
-- ROS Noetic (recommended)
+- ROS Noetic (required)
 
 Install ROS Noetic:
 ```bash
@@ -27,15 +27,6 @@ Source the ROS environment:
 source /opt/ros/noetic/setup.bash
 ```
 
-### FreeOpcUa Dependencies
-- **spdlog**
-- **Boost** libraries
-
-Install dependencies:
-```bash
-sudo apt install libspdlog-dev libboost-system-dev libboost-thread-dev
-```
-
 ## Clone the Repository
 
 Create a new ROS workspace and clone this repository:
@@ -45,12 +36,6 @@ cd ~/FlexRoWick_clamp_ws/src
 
 git clone https://github.com/rakesh-1597/FlexRoWick_clamp_control.git
 ```
-
-Clone the **FreeOpcUa** library into the workspace:
-```bash
-git clone https://github.com/FreeOpcUa/freeopcua.git
-```
-
 ## Build the Workspace
 
 ### Step 1: Clean the Workspace
@@ -78,16 +63,116 @@ Add this to your `~/.bashrc` file to source automatically:
 echo "source ~/FlexRoWick_clamp_ws/devel/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 ```
+## Pre-Conditions
+### Ensure that the PLC and the clamp is powered ON, PLC is in 'RUN' state
 
 ## Running the ROS Nodes
-
-### Example: Running `clamp_control`
-To run the `clamp_control` node, use:
+### Step 1: Run roscore in a terminal
+From root directory of the machine, source the setup.bash script
 ```bash
-rosrun clamp_control flexrowick_clamp_control
+source /opt/ros/noetic/setup.bash
 ```
 
-Ensure that the OPC UA server is running and reachable at the specified endpoint configured in your node.
+Run roscore
+```bash
+roscore
+```
+
+### Step 2: Running `plc_client_node`
+Move to root directory of the project folder, source the setup.bash script of the project present under 'devel' folder
+```bash
+source devel/setup.bash
+```
+
+from root directory of the project, move to 'src/clamp_controller/plc_client_node/' and run plcClientNode.py python script
+```bash
+$ cd src/clamp_controller/plc_client_node/
+$ python3 plcClientNode.py
+```
+This will run the plc_client_node ROS node, that will be waiting for the commands to be executed which are to be sent using 'clamp_command_interface' ROS node.
+
+### Step 3: Running 'clamp_command_interface' ROS node to execute clamp init and actuation
+#### Execute 'main.py' script
+'main.py' script present in 'src/clamp_cointroller' sub-folder uses methods of 'ClampCmdInterface' class (check src/controller_interface/clamp_command_interface.py).
+These methods are used to execute operations as mentioned in the points below.
+```bash
+$ cd src/clamp_controller/
+$ python3 main.py
+```
+This will output the following in the terminal
+```bash
+$ Welcome to the FlexRoWick Clamp Controller terminal!
+Command Menu: 1) Perform relative rotation 2) Perform absolute rotation 3) Perform calibration 
+ 4) Perform clamp initialisation 5) Stop rotation
+Enter the command number:
+```
+#### Activate Pre-charging and In-Feed
+Enter '4' in the command terminal and give 1
+```bash
+$ Welcome to the FlexRoWick Clamp Controller terminal!
+Command Menu: 1) Perform relative rotation 2) Perform absolute rotation 3) Perform calibration 
+ 4) Perform clamp initialisation 5) Stop rotation
+Enter the command number: 4
+
+$ Perform clamp initialisation Flag: 1(True) or 0(False)1
+```
+
+#### Calibrate the clamp
+Manually move the clamp to align it to top position as shown in the picture below, using the TIA portal software or the HMI panel. Once the clamp is properly aligned, in the command menu enter 3
+```bash
+Welcome to the FlexRoWick Clamp Controller terminal!
+Command Menu: 1) Perform relative rotation 2) Perform absolute rotation 3) Perform calibration 
+ 4) Perform clamp initialisation 5) Stop rotation
+Enter the command number: 3
+```
+Once the calibration command is executed, the operations below can be performed
+**Note**: Without performing calibration, one cannot execute any of the rotation operations mentioned below.
+#### Execute relative rotation
+To perform relative rotation, enter '1' in the command menu
+```bash
+Welcome to the FlexRoWick Clamp Controller terminal!
+Command Menu: 1) Perform relative rotation 2) Perform absolute rotation 3) Perform calibration 
+ 4) Perform clamp initialisation 5) Stop rotation
+Enter the command number: 1
+```
+Provide the rotation angle relative to the current position that you want the clamp to move
+```bash
+Welcome to the FlexRoWick Clamp Controller terminal!
+Command Menu: 1) Perform relative rotation 2) Perform absolute rotation 3) Perform calibration 
+ 4) Perform clamp initialisation 5) Stop rotation
+Enter the command number: 1
+Enter the relative rotation value: (any positive or negative float value)
+```
+Observe the clamp rotation, and note down the debug prints in the terminal which runs 'plcClienNode'. Observe the changes in the current angle of the clamp that gets printed and sent as a ROS topic every 500ms (configurable in the plcClientNode class)
+
+
+#### Execute absolute rotation
+To perform absolute rotation, enter '1' in the command menu
+```bash
+Welcome to the FlexRoWick Clamp Controller terminal!
+Command Menu: 1) Perform relative rotation 2) Perform absolute rotation 3) Perform calibration 
+ 4) Perform clamp initialisation 5) Stop rotation
+Enter the command number: 2
+```
+Provide the absolute angle position that you want the clamp to move to
+```bash
+Welcome to the FlexRoWick Clamp Controller terminal!
+Command Menu: 1) Perform relative rotation 2) Perform absolute rotation 3) Perform calibration 
+ 4) Perform clamp initialisation 5) Stop rotation
+Enter the command number: 2
+Enter the absolute rotation value: (any positive or negative float value)
+```
+Observe the clamp rotation, and note down the debug prints in the terminal which runs 'plcClienNode'. Observe the changes in the current angle of the clamp that gets printed and sent as a ROS topic every 500ms (configurable in the plcClientNode class)
+
+#### Stop rotation midway
+While the clamp is executing the rotations, you could also stop the rotation midway using the command number '5'
+```bash
+Welcome to the FlexRoWick Clamp Controller terminal!
+Command Menu: 1) Perform relative rotation 2) Perform absolute rotation 3) Perform calibration 
+ 4) Perform clamp initialisation 5) Stop rotation
+Enter the command number: 5
+```
+Observe and verify stoppage of rotation, as well as the current angle in the terminal which runs 'plcClienNode'.
 
 ## Troubleshooting
 
