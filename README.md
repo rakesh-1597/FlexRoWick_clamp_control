@@ -87,7 +87,7 @@ source devel/setup.bash
 from root directory of the project, move to 'src/clamp_controller/plc_client_node/' and run plcClientNode.py python script
 ```bash
 $ cd src/clamp_controller/plc_client_node/
-$ python3 plcClientNode.py
+$ rosrun clamp_controller plcClientNode.py
 ```
 This will run the plc_client_node ROS node, that will be waiting for the commands to be executed which are to be sent using 'clamp_command_interface' ROS node.
 
@@ -173,36 +173,6 @@ Command Menu: 1) Perform relative rotation 2) Perform absolute rotation 3) Perfo
 Enter the command number: 5
 ```
 Observe and verify stoppage of rotation, as well as the current angle in the terminal which runs 'plcClienNode'.
-
-## Troubleshooting
-
-### Issue: `Segmentation fault (core dumped)`
-Ensure that:
-- All dependencies (e.g., FreeOpcUa, spdlog) are installed and linked correctly.
-- The OPC UA server is running and accessible.
-
-Run the application in `gdb` for detailed debugging:
-```bash
-gdb ~/FlexRoWick_clamp_ws/devel/lib/clamp_control/flexrowick_clamp_control
-```
-
-### Issue: Library Not Found (`libopcuacore.so`)
-Ensure the `LD_LIBRARY_PATH` includes the directory where the library is installed:
-```bash
-export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-```
-Add it to `~/.bashrc` for persistence:
-```bash
-echo "export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH" >> ~/.bashrc
-source ~/.bashrc
-```
-
-## Contributing
-
-Contributions are welcome! To contribute:
-1. Fork the repository.
-2. Create a feature branch.
-3. Submit a pull request with a detailed explanation of your changes.
 
 ## License
 
