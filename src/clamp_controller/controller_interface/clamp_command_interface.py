@@ -1,18 +1,40 @@
 #!/usr/bin/env python3
 import rospy
 from std_msgs.msg import Float32, Bool
+import os
+import yaml
 
 class ClampCmdInterface:
     def __init__(self):
+        self.loadYaml()
         rospy.init_node("clamp_command_interface")
-        self.activateInfeedCommandPub_ = rospy.Publisher("flexrowick/activate_infeed", Bool, queue_size= 1)
-        self.activatePrechargingCommandPub_ = rospy.Publisher("flexrowick/activate_precharging", Bool, queue_size= 1)
-        self.relativeRotationPub_ = rospy.Publisher("flexrowick/clamp_relative_rotation", Float32, queue_size = 10)
-        self.absoluteRotationPub_ = rospy.Publisher("flexrowick/clamp_absolute_rotation", Float32, queue_size= 10)
-        self.calibrationCommandPub_ = rospy.Publisher("flexrowick/calibration_done_cmd", Bool, queue_size= 10)
-        self.stopRotationPub_ = rospy.Publisher("flexrowick/stop_rotation", Bool, queue_size= 1)
-        self.initialiseClampPub_ = rospy.Publisher("flexrowick/clamp_init", Bool, queue_size= 1)
+        self.relativeRotationPub_ = rospy.Publisher(rospy.get_param("clamp_controller/topic_relative_rotation"), Float32, queue_size = 10)
+        self.absoluteRotationPub_ = rospy.Publisher(rospy.get_param("clamp_controller/topic_absolute_rotation"), Float32, queue_size= 10)
+        self.calibrationCommandPub_ = rospy.Publisher(rospy.get_param("clamp_controller/topic_calibration_command"), Bool, queue_size= 10)
+        self.stopRotationPub_ = rospy.Publisher(rospy.get_param("clamp_controller/topic_stop_rotation"), Bool, queue_size= 1)
+        self.initialiseClampPub_ = rospy.Publisher(rospy.get_param("clamp_controller/topic_clamp_init"), Bool, queue_size= 1)
         rospy.sleep(1)  #give some time for rosNode to register the publishers for 1 second
+    def loadYaml(self):
+        """Loads parameters from a YAML file into the ROS Parameter Server"""
+        cwd = os.path.dirname(os.path.abspath(__file__))
+
+        # Define the relative path to the YAML file (relative to the workspace root)
+        yaml_relative_path = "config/clamp_controller.yaml"
+        
+        # Construct the absolute path
+        yaml_path = os.path.join(cwd, yaml_relative_path)        
+        if not os.path.exists(yaml_path):
+            rospy.logwarn(f"YAML file not found: {yaml_path}")
+            return
+        
+        try:
+            with open(yaml_path, "r") as file:
+                params = yaml.safe_load(file)
+                for key, value in params.items():
+                    rospy.set_param(key, value)  # Load params into ROS parameter server
+            rospy.loginfo("Loaded parameters from YAML file.")
+        except Exception as e:
+            rospy.logerr(f"Failed to load YAML file: {e}")
 
     def relRotation(self, angle:float):
         try:
@@ -53,26 +75,6 @@ class ClampCmdInterface:
             self.stopRotationPub_.publish(Bool(data=bool(flag)))
         except rospy.ROSException:
             rospy.loginfo("Failed to publish stop rotation command flag!")
-
-    def activateInfeed(self, actFlag:bool):
-        try:
-            flag = actFlag
-        except ValueError as e:
-            rospy.loginfo(f"Error! Entered value is not of type Bool:{e}")
-        try:
-            self.activateInfeedCommandPub_.publish(Bool(data=bool(flag)))
-        except rospy.ROSException:
-            rospy.loginfo("Failed to publish activate Infeed command flag!")
-    
-    def activatePrecharging(self, actFlag:bool):
-        try:
-            flag = actFlag
-        except ValueError as e:
-            rospy.loginfo(f"Error! Entered value is not of type Bool:{e}")
-        try:
-            self.activatePrechargingCommandPub_.publish(Bool(data=bool(flag)))
-        except rospy.ROSException:
-            rospy.loginfo("Failed to publish activate Precharging command flag!")
 
     def initialiseClamp(self, initFlag:bool):
         try:

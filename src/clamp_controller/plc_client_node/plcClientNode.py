@@ -25,28 +25,28 @@ logging.basicConfig(
 
 class PlcClient:
     def __init__(self):
-        #self.loadYaml()
+        self.loadYaml()
         self.client_ = snap7.client.Client()
-        self.ip_ = rospy.get_param("plc_client_node/plc_ip", "172.31.1.160")
-        self.rack_ = rospy.get_param("plc_client_node/plc_rack", 0)
-        self.slot_ = rospy.get_param("plc_client_node/plc_slot", 1)
-        self.clampCtrlDbNum_ = rospy.get_param("plc_client_node/plc_db_number", 2)
+        self.ip_ = rospy.get_param("clamp_controller/plc_ip")
+        self.rack_ = rospy.get_param("clamp_controller/plc_rack")
+        self.slot_ = rospy.get_param("clamp_controller/plc_slot")
+        self.clampCtrlDbNum_ = rospy.get_param("clamp_controller/plc_db_number")
         self.isCalibrated_ = False
         self.currentClampAngle_ = float(0.00)
         self.actualClampAngle_ = float(0.00)
         self.clampRotating_ = False
         rospy.init_node("plc_client_node")
-        rospy.Subscriber(rospy.get_param("/topic_relative_rotation","flexrowick/clamp_relative_rotation"), Float32, self.callbackRelRotation)
-        rospy.Subscriber(rospy.get_param("/topic_calibration_command","flexrowick/calibration_done_cmd"), Bool, self.callbackCalibrationDone)
-        rospy.Subscriber(rospy.get_param("/topic_absolute_rotation","flexrowick/clamp_absolute_rotation"), Float32, self.callbackAbsRotation)
-        rospy.Subscriber(rospy.get_param("/topic_stop_rotation","flexrowick/stop_rotation"), Bool, self.callbackStopRotation)
-        rospy.Subscriber(rospy.get_param("/topic_clamp_init","flexrowick/clamp_init"), Bool, self.callbackClampInit)
-        self.clamp_angle_pub = rospy.Publisher("flexrowick/current_clamp_angle", Float32, queue_size = 10)
+        rospy.Subscriber(rospy.get_param("clamp_controller/topic_relative_rotation"), Float32, self.callbackRelRotation)
+        rospy.Subscriber(rospy.get_param("clamp_controller/topic_calibration_command"), Bool, self.callbackCalibrationDone)
+        rospy.Subscriber(rospy.get_param("clamp_controller/topic_absolute_rotation"), Float32, self.callbackAbsRotation)
+        rospy.Subscriber(rospy.get_param("clamp_controller/topic_stop_rotation"), Bool, self.callbackStopRotation)
+        rospy.Subscriber(rospy.get_param("clamp_controller/topic_clamp_init"), Bool, self.callbackClampInit)
+        self.clamp_angle_pub = rospy.Publisher(rospy.get_param("clamp_controller/topic_current_clamp_angle"), Float32, queue_size = 10)
         self.timer = rospy.Timer(rospy.Duration(1), self.publishClampAngle)
     
     def loadYaml(self):
         """Loads parameters from a YAML file into the ROS Parameter Server"""
-        cwd = os.getcwd()
+        cwd = os.path.dirname(os.path.abspath(__file__))
 
         # Define the relative path to the YAML file (relative to the workspace root)
         yaml_relative_path = "config/plc_client.yaml"
@@ -153,20 +153,7 @@ class PlcClient:
             self.write_bool(self.clampCtrlDbNum_,10,2, True) # TODO: Check with HMI panel on how to stop ongoing rotation
         except Exception as e:
             rospy.loginfo(f"Error in stopping rotation : {e}")
-    
-    def callbackActivateInfeed(self, msg:Bool):
-        rospy.loginfo(f"activating InFeed")
-        try:
-            self.write_bool(self.clampCtrlDbNum_,10,5,bool(msg))
-        except Exception as e:
-            rospy.loginfo(f"Error activating infeed : {e}")
-    
-    def callbackActivatePrecharging(self, msg:Bool):
-        rospy.loginfo(f"activating Pre charging")
-        try:
-            self.write_bool(self.clampCtrlDbNum_,10,3,bool(msg))
-        except Exception as e:
-            rospy.loginfo(f"Error activating precharging: {e}")
+
     
     def callbackClampInit(self, msg:Bool):
         rospy.loginfo(f"Initialising the clamp..")
@@ -209,8 +196,6 @@ class PlcClient:
                 self.write_bool(self.clampCtrlDbNum_,10, 4,bool(msg))
             except Exception as e:
                 rospy.loginfo(f"Error writing  10.4 bit field: {e}")
-            
-    
     
     def disconnect(self):
         self.client_.disconnect()
@@ -222,12 +207,14 @@ class PlcClient:
         except Exception as e:
             rospy.logerr(f"Failed to read DB data: {e}")
             sys.exit(1)
+
     def readClampPosition(self) -> float:
         try:
             return struct.unpack('>d',self.read_db_data(self.clampCtrlDbNum_, 12, 8))[0]
         except Exception as e:
             rospy.logerr(f"Failed to read from DB{self.clampCtrlDbNum_} data at 12th byte: {e}")
             sys.exit(1)
+
     def write_db_data(self, db_number, start, data):
         try:
             self.client_.db_write(db_number, start, data)

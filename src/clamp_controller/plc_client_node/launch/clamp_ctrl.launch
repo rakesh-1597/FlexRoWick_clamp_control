@@ -1,0 +1,14 @@
+<launch>
+  <!-- Load parameters from YAML -->
+  <rosparam file="$(find plc_client_node)/config/plc_client.yaml" command="load" />
+
+  <!-- Start the PLC client node -->
+  <node name="plc_client_node" pkg="plc_client_node" type="plcClientNode.py" output="screen">
+    <!-- Optional: Override parameters directly -->
+    <!--
+    <param name="plc_client_node/plc_ip" value="192.168.0.100"/>
+    <param name="plc_client_node/slot" value="2"/>
+    <param name="plc_client_node/rack" value="0"/>
+    -->
+  </node>
+</launch>
