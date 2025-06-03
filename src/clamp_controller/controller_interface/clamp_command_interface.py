@@ -14,6 +14,9 @@ class ClampCmdInterface:
         self.stopRotationPub_ = rospy.Publisher(rospy.get_param("clamp_controller/topic_stop_rotation"), Bool, queue_size= 1)
         self.initialiseClampPub_ = rospy.Publisher(rospy.get_param("clamp_controller/topic_clamp_init"), Bool, queue_size= 1)
         rospy.sleep(1)  #give some time for rosNode to register the publishers for 1 second
+
+    # Function to load parameters from a YAML file into the ROS Parameter Server
+    # The YAML file is located in the 'config' directory of the package
     def loadYaml(self):
         """Loads parameters from a YAML file into the ROS Parameter Server"""
         cwd = os.path.dirname(os.path.abspath(__file__))
@@ -36,6 +39,7 @@ class ClampCmdInterface:
         except Exception as e:
             rospy.logerr(f"Failed to load YAML file: {e}")
 
+    # Function to publish relative rotation commands to the respective topic
     def relRotation(self, angle:float):
         try:
             relative_rotation = angle
@@ -46,6 +50,7 @@ class ClampCmdInterface:
         except rospy.ROSException:
             rospy.loginfo("Failed to publish relative rotation value!")
 
+    # Function to publish absolute rotation commands to the respective topic
     def absRotation(self, angle:float):
         try:
             absolute_rotation = angle
@@ -56,6 +61,8 @@ class ClampCmdInterface:
         except rospy.ROSException:
             rospy.loginfo("Failed to publish absolute rotation value!")
     
+    # Function to set the calibration flag
+    # This function publishes a boolean value to the calibration command topic
     def setCalibration(self, calibrationFlag:bool):
         try:
             calibFlag = calibrationFlag
@@ -66,6 +73,8 @@ class ClampCmdInterface:
         except rospy.ROSException:
             rospy.loginfo("Failed to publish calibration command flag!")
     
+    # Function to stop the rotation of the clamp
+    # This function publishes a boolean value to the stop rotation topic
     def stopRotation(self, stopFlag:bool):
         try:
             flag = stopFlag
@@ -76,6 +85,8 @@ class ClampCmdInterface:
         except rospy.ROSException:
             rospy.loginfo("Failed to publish stop rotation command flag!")
 
+    # Function to initialise the clamp
+    # This function publishes a boolean value to the initialise clamp topic
     def initialiseClamp(self, initFlag:bool):
         try:
             flag = initFlag

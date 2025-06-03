@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import snap7
 from snap7.util import get_bool
 from snap7.util import set_bool
@@ -12,16 +11,6 @@ import os
 #import logging
 from std_msgs.msg import Bool, Float32
 
-"""
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(levelname)s] [%(asctime)s]: %(message)s',
-    handlers=[
-        logging.StreamHandler()
-    ]
-)
-"""
 
 class PlcClient:
     def __init__(self):
@@ -44,6 +33,9 @@ class PlcClient:
         self.clamp_angle_pub = rospy.Publisher(rospy.get_param("clamp_controller/topic_current_clamp_angle"), Float32, queue_size = 10)
         self.timer = rospy.Timer(rospy.Duration(1), self.publishClampAngle)
     
+
+    # Function to load parameters from a YAML file into the ROS Parameter Server
+    # The YAML file is located in the 'config' directory of the package
     def loadYaml(self):
         """Loads parameters from a YAML file into the ROS Parameter Server"""
         cwd = os.path.dirname(os.path.abspath(__file__))
@@ -66,6 +58,9 @@ class PlcClient:
         except Exception as e:
             rospy.logerr(f"Failed to load YAML file: {e}")
 
+    # Function to connect to the PLC
+    # This function will attempt to connect to the PLC using the IP, rack, and slot parameters
+    # If the connection fails, it will log an error and exit the program
     def connect(self):
         try:
             self.client_.connect(self.ip_, self.rack_, self.slot_)
@@ -75,6 +70,8 @@ class PlcClient:
             rospy.logerr(f"Failed to connect to PLC: {e}")
             sys.exit(1)
 
+    # Callback function for relative rotation command
+    # This function will be called when a message is received on the relative rotation topic
     def callbackRelRotation(self, msg:Float32):
         if(not self.isCalibrated_):
             rospy.loginfo("Calibration not done! Please follow these steps below")
@@ -101,6 +98,8 @@ class PlcClient:
             except Exception as e:
                 rospy.loginfo(f"Error resetting StartPosRel bit: {e}")
 
+    # Callback function for absolute rotation command
+    # This function will be called when a message is received on the absolute rotation topic
     def callbackAbsRotation(self, msg:Float32):
         if(not self.isCalibrated_):
             rospy.loginfo("Calibration not done! Please follow these steps below")
@@ -126,21 +125,22 @@ class PlcClient:
             except Exception as e:
                 rospy.loginfo(f"Error setting StartPosRel bit: {e}")
 
-            # wait until the rotation is completed
-            #while(self.isClampBusy()):
-             #   rospy.sleep(0.5)  
-              #  pass
             try:
                 self.write_bool(self.clampCtrlDbNum_,10,1,False)
             except Exception as e:
                 rospy.loginfo(f"Error resetting StartPosRel bit: {e}")
 
+    # Callback function for calibration command
+    # This function will be called when a message is received on the calibration command topic
     def callbackCalibrationDone(self, msg:Bool):
         self.isCalibrated_ = bool(msg)
         if(self.isCalibrated_):
             self.actualClampAngle_ = self.readClampPosition()
         rospy.loginfo(f"Calibration flag set to {msg}  and actualClampAngle_ = {self.actualClampAngle_}")
 
+    # Callback function for stop rotation command
+    # This function will be called when a message is received on the stop rotation topic
+    # It will stop the ongoing rotation by writing to the PLC
     def callbackStopRotation(self, msg:Bool):
         
         rospy.loginfo(f"Stopping the rotation")
@@ -154,11 +154,15 @@ class PlcClient:
         except Exception as e:
             rospy.loginfo(f"Error in stopping rotation : {e}")
 
-    
+    # Callback function for clamp initialization command
+    # This function will be called when a message is received on the clamp initialization topic
     def callbackClampInit(self, msg:Bool):
         rospy.loginfo(f"Initialising the clamp..")
+
         try:
             rospy.loginfo(f"Activating infeed now..")
+
+            # Activate infeed by writing to the PLC
             self.write_bool(self.clampCtrlDbNum_,10, 5,bool(msg))
             rospy.sleep(1)
             rospy.loginfo(f"Infeed Activated..")
@@ -166,6 +170,8 @@ class PlcClient:
             rospy.loginfo(f"Error activating precharging: {e}")
         try:
             rospy.loginfo(f"Activating Pre Charging now..")
+
+            # Activate precharging by writing to the PLC
             self.write_bool(self.clampCtrlDbNum_,10, 3,bool(msg))
             rospy.sleep(1)
             rospy.loginfo(f"Precharging Activated..")
@@ -173,6 +179,8 @@ class PlcClient:
             rospy.loginfo(f"Error activating precharging: {e}")
         try:
             rospy.loginfo(f"Activating axis now..")
+
+            # Activate axis by writing to the PLC
             self.write_bool(self.clampCtrlDbNum_,11, 2,bool(msg))
             rospy.sleep(1)
             rospy.loginfo(f"Axis Activated..")
@@ -180,12 +188,14 @@ class PlcClient:
             rospy.loginfo(f"Error activating Axis: {e}")
         
         try:
+            # Read the AxisReady bit field from the PLC
             axisReady = self.read_bit(self.clampCtrlDbNum_, 68, 1)
         except Exception as e:
             rospy.loginfo(f"Error reading  AxisReady bit field: {e}")
         rospy.loginfo(f"AxisReady:{axisReady}")
 
         try:
+            # Read the AxisError bit field from the PLC
             axisError = self.read_bit(self.clampCtrlDbNum_, 68, 3)
         except Exception as e:
             rospy.loginfo(f"Error reading  AxisError bit field: {e}")
@@ -197,10 +207,6 @@ class PlcClient:
             except Exception as e:
                 rospy.loginfo(f"Error writing  10.4 bit field: {e}")
     
-    def disconnect(self):
-        self.client_.disconnect()
-        rospy.loginfo("Disconnected from PLC")
-
     def read_db_data(self, db_number, start, size):
         try:
             return self.client_.db_read(db_number, start, size)
@@ -208,6 +214,9 @@ class PlcClient:
             rospy.logerr(f"Failed to read DB data: {e}")
             sys.exit(1)
 
+    # Function to read the current clamp position from the PLC
+    # This function reads the clamp position from the PLC's data block
+    # It returns the position as a double (8-byte float)
     def readClampPosition(self) -> float:
         try:
             return struct.unpack('>d',self.read_db_data(self.clampCtrlDbNum_, 12, 8))[0]
@@ -215,6 +224,7 @@ class PlcClient:
             rospy.logerr(f"Failed to read from DB{self.clampCtrlDbNum_} data at 12th byte: {e}")
             sys.exit(1)
 
+    # Function to write data to a specific DB in the PLC
     def write_db_data(self, db_number, start, data):
         try:
             self.client_.db_write(db_number, start, data)
@@ -223,9 +233,12 @@ class PlcClient:
             rospy.logerr(f"Failed to write DB data: {e}")
             sys.exit(1)
 
+    # Function to check if the PLC is connected
     def is_connected(self):
         return self.client_.get_connected()
     
+    # Function to write a double (8-byte float) value to a specific DB address
+    # This function converts the double value to bytes in Big-endian format and writes it to the PLC
     def write_double(self, db_number, start, value):
         """ Write an 8-byte float (double) value to a specific DB address """
         self.waitForPlc()
@@ -237,6 +250,8 @@ class PlcClient:
         except Exception as e:
             rospy.logerr(f"Failed to write to PLC: {e}")
     
+    # Function to write a boolean value to a specific bit in a DB byte
+    # This function reads the current byte, modifies the specific bit, and writes it back to the PLC
     def write_bool(self, db_number, byte_offset, bit_offset, value):
         """
         Write a boolean value to a specific bit in a DB byte.
@@ -246,6 +261,7 @@ class PlcClient:
         :param bit_offset: The bit within the byte (0-7, e.g., 1 for 10.1)
         :param value: The boolean value (True or False)
         """
+
         self.waitForPlc()
         try:
             # Read the current byte from the PLC
@@ -265,6 +281,9 @@ class PlcClient:
         except Exception as e:
             rospy.logerr(f"Failed to write BOOL to PLC: {e}")
 
+    # Function to read a specific bit from a byte in a Data Block
+    # This function reads a byte from the PLC and extracts the specified bit
+    # It returns the value of the bit as a boolean (True/False)
     def read_bit(self, db_number, byte_offset, bit_offset):
         """
         Reads a specific bit from a byte in a Data Block.
@@ -285,6 +304,7 @@ class PlcClient:
             rospy.logerr(f"Failed to read bit from PLC at  DB{self.clampCtrlDbNum_} byte {byte_offset} bit{bit_offset}: {e}")
             return None
 
+    # Function to disconnect from the PLC
     def disconnect(self):
         if self.client_.get_connected():
             self.client_.disconnect()
@@ -292,24 +312,20 @@ class PlcClient:
     
     def isClampBusy(self) -> bool:
         return self.read_bit(self.clampCtrlDbNum_, 68, 4)
-    
-    def runNodeLoop(self):
-        rospy.loginfo("Starting Plc Client Node")
-        self.connect()
-        rospy.loginfo(f"Plc Info: {self.client_.get_cpu_info()}")
-        rospy.on_shutdown(self.disconnect)
-        rospy.loginfo(f"Waiting for data...")
-        rospy.spin()
 
+    # Function to publish the current clamp angle at regular intervals
+    # This function reads the current clamp position from the PLC and publishes it to a ROS topic
     def publishClampAngle(self, timer):
         if(self.isCalibrated_):
             self.waitForPlc()
-            self.currentClampAngle_ = round((self.readClampPosition() - self.actualClampAngle_) % 360.00,3)
-            self.clamp_angle_pub.publish(self.currentClampAngle_ )
+            self.currentClampAngle_ = round((self.readClampPosition() - self.actualClampAngle_) % 360.00, 3)
+            self.clamp_angle_pub.publish(self.currentClampAngle_)
             rospy.loginfo(f"published clamp angle:{self.currentClampAngle_}")
         else:
             rospy.loginfo(f"calibration not done yet or rotation is being executed")
     
+    # Function to wait until the PLC is ready to accept new jobs
+    # This function continuously checks the PLC's CPU state until it is in "Run" mode
     def waitForPlc(self):
         """Wait until the PLC is ready to accept new jobs."""
         while True:
@@ -321,9 +337,10 @@ class PlcClient:
             except Exception as e:
                 rospy.logwarn(f"Waiting for PLC to become ready: {e}")
             rospy.sleep(0.5)  # Wait before checking again
-        
-    
 
+# Main function to start the PLC client node
+# This function initializes the node, connects to the PLC, and starts listening for messages
+# It also sets up a shutdown handler to disconnect from the PLC gracefully
 if __name__ == "__main__":
     plc = PlcClient()
     rospy.loginfo("Starting Plc Client Node")
